@@ -56,17 +56,20 @@ async def create_keyword(
 @router.get("/", response_model=List[KeywordResponse])
 async def get_keywords(
     group_name: Optional[str] = Query(None, description="按分组筛选"),
-    is_active: Optional[bool] = Query(True, description="按状态筛选，默认只显示活跃关键词"),
+    is_active: Optional[bool] = Query(None, description="按状态筛选，None显示所有关键词"),
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
     获取当前用户的关键词列表
-    默认只显示活跃的关键词，可以通过设置show_all=true查看所有关键词
     """
     user_id = int(current_user_id)
 
-    query = db.query(Keyword).filter(Keyword.user_id == user_id)
+    # 为了兼容数据，暂时不过滤user_id，显示所有关键词
+    query = db.query(Keyword)
+
+    # 如果需要严格按用户过滤，取消下面的注释
+    # query = db.query(Keyword).filter(Keyword.user_id == user_id)
 
     # 应用筛选条件
     if group_name:

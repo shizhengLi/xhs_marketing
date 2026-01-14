@@ -14,6 +14,7 @@ import json
 import base64
 
 from app.core.config import settings
+from app.services.video_service import process_video_with_retry
 
 
 class XHSCrawler:
@@ -225,6 +226,25 @@ class XHSCrawler:
             # 笔记URL
             note_url = f"{self.base_url}/explore/{note_id}" if note_id else ''
 
+            # 视频信息
+            video_url = None
+            video_content = None
+
+            # 检查是否是视频笔记
+            video_info = note_card.get('video', {})
+            if video_info:
+                # 获取视频URL
+                video_url = video_info.get('media', {}).get('stream', {}).get('h264', [{}])[0].get('master_url') if video_info.get('media') else None
+
+                # 如果有视频URL，尝试提取视频内容
+                if video_url:
+                    print(f"发现视频，正在提取内容: {title}")
+                    video_content = process_video_with_retry(video_url, title)
+                    if video_content:
+                        print(f"视频内容提取成功: {video_content[:100]}...")
+                    else:
+                        print("视频内容提取失败或视频超过30秒")
+
             return {
                 'note_id': note_id,
                 'title': title or desc[:50],  # 如果没有标题，使用描述前50字
@@ -236,6 +256,8 @@ class XHSCrawler:
                 'shares': shares,
                 'cover_url': cover_url,
                 'url': note_url,
+                'video_url': video_url,
+                'video_content': video_content,
                 'published_at': datetime.now().isoformat(),
                 'crawled_at': datetime.now().isoformat()
             }

@@ -12,6 +12,8 @@ class PostBase(BaseModel):
     comments: int
     shares: int
     url: str
+    video_url: Optional[str] = None
+    video_content: Optional[str] = None
 
 
 class PostCreate(PostBase):

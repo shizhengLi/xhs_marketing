@@ -15,7 +15,8 @@ import {
   Tag,
   Progress,
   Timeline,
-  Collapse
+  Collapse,
+  Select
 } from 'antd';
 import {
   FireOutlined,
@@ -29,7 +30,7 @@ import {
   StarOutlined,
   BarChartOutlined
 } from '@ant-design/icons';
-import axios from 'axios';
+import request from '../utils/request';
 
 const { Title, Text, Paragraph } = Typography;
 const { Panel } = Collapse;
@@ -52,10 +53,13 @@ const ReportsPage: React.FC = () => {
   const [keywordAnalyses, setKeywordAnalyses] = useState<KeywordAnalysis[]>([]);
   const [comprehensiveReport, setComprehensiveReport] = useState<string>('');
   const [activeTab, setActiveTab] = useState('keywords');
+  const [keywords, setKeywords] = useState<any[]>([]);
+  const [selectedKeywords, setSelectedKeywords] = useState<number[]>([]);
 
   // 从localStorage加载保存的数据
   useEffect(() => {
     loadSavedReports();
+    loadKeywords();
   }, []);
 
   // 当分析结果更新时保存到localStorage
@@ -98,26 +102,39 @@ const ReportsPage: React.FC = () => {
     }
   };
 
+  // 加载关键词列表
+  const loadKeywords = async () => {
+    try {
+      const response = await request.get('/v1/keywords/');
+      setKeywords(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error('加载关键词列表失败:', error);
+      message.error('加载关键词列表失败');
+    }
+  };
+
   // 分析各关键词热点内容
   const handleAnalyzeKeywords = async () => {
+    if (selectedKeywords.length === 0) {
+      message.warning('请先选择要分析的关键词');
+      return;
+    }
+
     setAnalyzing(true);
     setProgress(0);
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post('/api/v1/reports/analyze-keywords', {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await request.post('/v1/reports/analyze-keywords', selectedKeywords);
 
-      if (response.data.success) {
-        setKeywordAnalyses(response.data.analyses);
-        message.success(`成功分析 ${response.data.analyzed_keywords} 个关键词的热点内容`);
+      if (response.success) {
+        setKeywordAnalyses(response.analyses);
+        message.success(`成功分析 ${response.analyzed_keywords} 个关键词的热点内容`);
         setProgress(100);
 
         // 自动保存到localStorage
         saveReportsToStorage();
       }
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '分析失败');
+      message.error(error.detail || '分析失败');
     } finally {
       setAnalyzing(false);
     }
@@ -139,22 +156,19 @@ const ReportsPage: React.FC = () => {
   const handleGenerateReport = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post('/api/v1/reports/generate-comprehensive-report', {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await request.post('/v1/reports/generate-comprehensive-report', {});
 
-      if (response.data.success) {
+      if (response.success) {
         message.success('综合热点分析报告生成成功');
         setActiveTab('report');
         // 加载报告内容
-        await loadReportContent(response.data.report_id);
+        await loadReportContent(response.report_id);
 
         // 自动保存到localStorage
         saveReportsToStorage();
       }
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '报告生成失败');
+      message.error(error.detail || '报告生成失败');
     } finally {
       setLoading(false);
     }
@@ -163,13 +177,10 @@ const ReportsPage: React.FC = () => {
   // 加载报告内容
   const loadReportContent = async (reportId: number) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`/api/v1/reports/${reportId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await request.get(`/v1/reports/${reportId}`);
 
-      if (response.data.success) {
-        setComprehensiveReport(response.data.report.content);
+      if (response.success) {
+        setComprehensiveReport(response.report.content);
       }
     } catch (error: any) {
       message.error('加载报告内容失败');
@@ -190,6 +201,7 @@ const ReportsPage: React.FC = () => {
             </Tag>
             <Text type="secondary">
               分析了 {analysis.posts_analyzed} 条内容
+              {analysis.video_posts_count !== undefined && ` (含${analysis.video_posts_count}条视频)`}
             </Text>
           </Space>
         }
@@ -198,88 +210,117 @@ const ReportsPage: React.FC = () => {
         }
         style={{ marginBottom: 16 }}
       >
-        {/* 趋势亮点 */}
-        {data.trend_highlights && (
+        {/* 趋势概述 */}
+        {data.trend_overview && (
           <div style={{ marginBottom: 16 }}>
             <Title level={5}>
-              <FireOutlined /> 热点趋势
+              <FireOutlined /> 热点趋势概述
+            </Title>
+            <Paragraph>{data.trend_overview}</Paragraph>
+          </div>
+        )}
+
+        {/* 用户偏好分析 */}
+        {data.content_preferences && (
+          <div style={{ marginBottom: 16 }}>
+            <Title level={5}>
+              <EyeOutlined /> 用户偏好分析
+            </Title>
+            <Paragraph>{data.content_preferences}</Paragraph>
+          </div>
+        )}
+
+        {/* 视频vs文字对比 */}
+        {data.video_vs_text && (
+          <div style={{ marginBottom: 16 }}>
+            <Title level={5}>
+              <BarChartOutlined /> 视频vs文字对比分析
+            </Title>
+            <Paragraph>{data.video_vs_text}</Paragraph>
+          </div>
+        )}
+
+        {/* 成功要素 */}
+        {data.success_factors && data.success_factors.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <Title level={5}>
+              <BulbOutlined /> 爆款要素提炼
             </Title>
             <ul>
-              {data.trend_highlights.map((trend: string, idx: number) => (
-                <li key={idx}>{trend}</li>
+              {data.success_factors.map((factor: string, idx: number) => (
+                <li key={idx}>{factor}</li>
               ))}
             </ul>
           </div>
         )}
 
-        {/* 用户画像 */}
-        {data.user_persona && (
+        {/* 内容空白点 */}
+        {data.content_gaps && data.content_gaps.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <Title level={5}>
-              <EyeOutlined /> 用户画像
+              <RocketOutlined /> 内容机会识别
             </Title>
-            <Paragraph>{data.user_persona.target_audience}</Paragraph>
-            <div>
-              <Text strong>痛点：</Text>
-              <ul>
-                {data.user_persona.pain_points?.map((point: string, idx: number) => (
-                  <li key={idx}>{point}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {/* 成功模式 */}
-        {data.content_success_patterns && (
-          <div style={{ marginBottom: 16 }}>
-            <Title level={5}>
-              <BulbOutlined /> 内容成功模式
-            </Title>
-            <div>
-              <Text strong>标题模式：</Text>
-              <ul>
-                {data.content_success_patterns.title_patterns?.map((pattern: string, idx: number) => (
-                  <li key={idx}>{pattern}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {/* 商业机会 */}
-        {data.commercial_opportunities && data.commercial_opportunities.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <Title level={5}>
-              <RocketOutlined /> 商业机会
-            </Title>
-            {data.commercial_opportunities.map((opp: any, idx: number) => (
-              <Card key={idx} size="small" style={{ marginBottom: 8 }}>
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Text strong>{opp.opportunity}</Text>
-                  <div>
-                    <Tag color={opp.feasibility === 'high' ? 'green' : opp.feasibility === 'medium' ? 'orange' : 'red'}>
-                      可行性: {opp.feasibility}
-                    </Tag>
-                    <Text type="secondary">{opp.estimated_value}</Text>
-                  </div>
-                </Space>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* 战略建议 */}
-        {data.actionable_recommendations && (
-          <div>
-            <Title level={5}>
-              <ThunderboltOutlined /> 行动建议
-            </Title>
-            <Timeline>
-              {data.actionable_recommendations.map((rec: string, idx: number) => (
-                <Timeline.Item key={idx}>{rec}</Timeline.Item>
+            <ul>
+              {data.content_gaps.map((gap: string, idx: number) => (
+                <li key={idx}>{gap}</li>
               ))}
-            </Timeline>
+            </ul>
+          </div>
+        )}
+
+        {/* 创作策略 */}
+        {data.creation_strategy && (
+          <div style={{ marginBottom: 16 }}>
+            <Title level={5}>
+              <StarOutlined /> 创作策略建议
+            </Title>
+            <Paragraph>{data.creation_strategy}</Paragraph>
+          </div>
+        )}
+
+        {/* 关键洞察 */}
+        {data.key_insights && data.key_insights.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <Title level={5}>
+              <ThunderboltOutlined /> 关键洞察
+            </Title>
+            <ul>
+              {data.key_insights.map((insight: string, idx: number) => (
+                <li key={idx}>{insight}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* 推荐主题 */}
+        {data.recommended_topics && data.recommended_topics.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <Title level={5}>
+              <FileTextOutlined /> 推荐内容主题
+            </Title>
+            <Space wrap>
+              {data.recommended_topics.map((topic: string, idx: number) => (
+                <Tag key={idx} color="blue">{topic}</Tag>
+              ))}
+            </Space>
+          </div>
+        )}
+
+        {/* 原始分析结果（如果结构化解析失败） */}
+        {data.raw_analysis && !data.trend_overview && (
+          <div style={{ marginBottom: 16 }}>
+            <Title level={5}>完整分析结果</Title>
+            <Paragraph
+              style={{
+                backgroundColor: '#f6f7f9',
+                padding: '12px',
+                borderRadius: '6px',
+                maxHeight: 300,
+                overflow: 'auto'
+              }}
+            >
+              {data.raw_analysis}
+            </Paragraph>
           </div>
         )}
       </Card>
@@ -297,13 +338,26 @@ const ReportsPage: React.FC = () => {
         }
         extra={
           <Space>
+            <Select
+              mode="multiple"
+              placeholder="选择要分析的关键词"
+              style={{ width: 300 }}
+              value={selectedKeywords}
+              onChange={setSelectedKeywords}
+              options={keywords.map(kw => ({
+                label: kw.keyword,
+                value: kw.id
+              }))}
+              maxTagCount={2}
+              allowClear
+            />
             <Button
               type="primary"
               icon={<FileTextOutlined />}
               onClick={handleAnalyzeKeywords}
               loading={analyzing}
             >
-              分析热点内容
+              分析选中关键词
             </Button>
             <Button
               icon={<LineChartOutlined />}
@@ -324,10 +378,10 @@ const ReportsPage: React.FC = () => {
         }
       >
         <Alert
-          message="智能热点分析系统"
+          title="智能热点分析系统"
           description={
             <div>
-              <p>利用GPT对小红书热点内容进行深度分析，按不同关键词领域提供趋势洞察、用户画像、商业机会和创作建议。</p>
+              <p>利用豆包AI对小红书热点内容进行深度分析，结合文字内容和视频内容，按不同关键词领域提供趋势洞察、用户画像、商业机会和创作建议。</p>
               {keywordAnalyses.length > 0 && (
                 <p style={{ color: '#52c41a', fontWeight: 500 }}>
                   ✅ 已缓存 {keywordAnalyses.length} 个关键词的分析结果，切换页面不会丢失数据

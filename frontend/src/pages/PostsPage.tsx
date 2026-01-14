@@ -41,6 +41,8 @@ interface Post {
   comments: number;
   shares: number;
   url?: string;
+  video_url?: string;
+  video_content?: string;
   published_at?: string;
   crawled_at?: string;
   keyword_name?: string;
@@ -183,6 +185,9 @@ const PostsPage: React.FC = () => {
       width: '30%',
       render: (text: string, record: Post) => (
         <a onClick={() => viewDetail(record)} style={{ fontWeight: 500 }}>
+          {record.video_url && (
+            <Tag color="purple" style={{ marginRight: 8 }}>视频</Tag>
+          )}
           {text}
         </a>
       )
@@ -659,11 +664,64 @@ const PostsPage: React.FC = () => {
             <Paragraph style={{ maxHeight: 300, overflow: 'auto' }}>
               {currentPost.content || '暂无内容'}
             </Paragraph>
-            {currentPost.url && (
+
+            {/* 视频内容展示 */}
+            {currentPost.video_url && (
+              <>
+                <Divider />
+                <Title level={5}>
+                  <Space>
+                    <FileTextOutlined />
+                    视频内容
+                  </Space>
+                </Title>
+
+                {currentPost.video_content ? (
+                  <div style={{
+                    padding: '12px',
+                    backgroundColor: '#f6f7f9',
+                    borderRadius: '6px',
+                    border: '1px solid #e8e8e8'
+                  }}>
+                    <Paragraph
+                      style={{
+                        maxHeight: 200,
+                        overflow: 'auto',
+                        margin: 0,
+                        fontSize: '14px',
+                        lineHeight: '1.6'
+                      }}
+                    >
+                      <Text strong style={{ color: '#1890ff' }}>AI分析内容：</Text>
+                      {currentPost.video_content}
+                    </Paragraph>
+                  </div>
+                ) : (
+                  <Alert
+                    message="视频内容未提取"
+                    description="该视频可能超过30秒或内容提取失败，仅显示原始文本内容。"
+                    type="info"
+                    showIcon
+                  />
+                )}
+
+                <div style={{ marginTop: '12px' }}>
+                  <Button
+                    icon={<EyeOutlined />}
+                    onClick={() => window.open(currentPost.video_url, '_blank')}
+                  >
+                    观看原视频
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {currentPost.url && !currentPost.video_url && (
               <Button
                 type="primary"
                 onClick={() => window.open(currentPost.url, '_blank')}
                 block
+                style={{ marginTop: '16px' }}
               >
                 查看原文
               </Button>

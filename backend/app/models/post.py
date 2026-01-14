@@ -17,6 +17,8 @@ class Post(Base):
     comments = Column(BigInteger, default=0)
     shares = Column(BigInteger, default=0)
     url = Column(String(500))
+    video_url = Column(String(500))
+    video_content = Column(Text)
     published_at = Column(DateTime(timezone=True))
     crawled_at = Column(DateTime(timezone=True), server_default=func.now())
 

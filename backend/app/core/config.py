@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # AI Settings
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_API_BASE: Optional[str] = None
+    ARK_API_KEY: Optional[str] = None
     AI_MODEL: str = "gpt-3.5-turbo"
 
     # Crawler Settings

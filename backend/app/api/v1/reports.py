@@ -1,9 +1,9 @@
 """
 报告生成API
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 
 from app.core.deps import get_db, get_current_user_id
@@ -19,30 +19,43 @@ logger = logging.getLogger(__name__)
 
 @router.post("/analyze-keywords")
 async def analyze_keywords_trending(
+    keyword_ids: Optional[List[int]] = Body(None, description="要分析的关键词ID列表，不传则分析所有活跃关键词"),
     current_user_id: str = Depends(get_current_user_id)
 ):
     """
-    分析所有活跃关键词的热点内容，按关键词领域分别分析
+    分析指定关键词或所有活跃关键词的热点内容，按关键词领域分别分析
+    结合文字内容和视频提取内容进行深度分析
+
+    Args:
+        keyword_ids: 要分析的关键词ID列表，None则分析所有活跃关键词
 
     Returns:
         各关键词的分析结果
     """
     db = SessionLocal()
     try:
-        # 获取所有活跃关键词
-        keywords = db.query(Keyword).filter(Keyword.is_active == True).all()
+        # 获取要分析的关键词
+        if keyword_ids and len(keyword_ids) > 0:
+            # 分析指定的关键词
+            keywords = db.query(Keyword).filter(
+                Keyword.id.in_(keyword_ids),
+                Keyword.is_active == True
+            ).all()
+        else:
+            # 分析所有活跃关键词
+            keywords = db.query(Keyword).filter(Keyword.is_active == True).all()
 
         if not keywords:
             raise HTTPException(
                 status_code=404,
-                detail="没有活跃的关键词"
+                detail="没有找到要分析的关键词"
             )
 
         # 为每个关键词进行GPT分析
         analyses = []
         for keyword in keywords:
             try:
-                # 获取该关键词的最新帖子数据
+                # 获取该关键词的最新帖子数据，包含视频内容
                 recent_posts = db.query(Post).filter(
                     Post.keyword_id == keyword.id
                 ).order_by(Post.likes.desc()).limit(15).all()
@@ -51,10 +64,10 @@ async def analyze_keywords_trending(
                     logger.info(f"关键词 '{keyword.keyword}' 没有数据，跳过分析")
                     continue
 
-                # 转换为字典格式
+                # 转换为字典格式，包含视频内容
                 posts_data = []
                 for post in recent_posts:
-                    posts_data.append({
+                    post_data = {
                         'title': post.title,
                         'author': post.author,
                         'likes': post.likes,
@@ -63,11 +76,15 @@ async def analyze_keywords_trending(
                         'shares': post.shares,
                         'content': post.content,
                         'url': post.url,
-                        'crawled_at': post.crawled_at.isoformat() if post.crawled_at else None
-                    })
+                        'crawled_at': post.crawled_at.isoformat() if post.crawled_at else None,
+                        'has_video': bool(post.video_url),  # 标记是否包含视频
+                        'video_content': post.video_content  # 包含视频分析内容
+                    }
+                    posts_data.append(post_data)
 
-                # 使用增强的GPT服务进行分析
-                analysis = openai_service.analyze_trending_content(
+                # 使用OpenAI服务进行分析，结合文字内容和视频内容
+                from app.services.openai_service import openai_service
+                analysis = openai_service.analyze_trending_content_with_video(
                     posts_data, keyword.keyword
                 )
 
@@ -76,11 +93,12 @@ async def analyze_keywords_trending(
                         "keyword": keyword.keyword,
                         "keyword_id": keyword.id,
                         "posts_analyzed": len(posts_data),
+                        "video_posts_count": sum(1 for p in posts_data if p.get('has_video')),
                         "analysis": analysis.get('analysis', {}),
                         "analysis_date": analysis.get('analysis_date'),
                         "model_used": analysis.get('model_used', 'gpt-4o-mini')
                     })
-                    logger.info(f"成功分析关键词: {keyword.keyword}")
+                    logger.info(f"成功分析关键词: {keyword.keyword}，包含 {sum(1 for p in posts_data if p.get('has_video'))} 个视频内容")
                 else:
                     logger.warning(f"关键词 '{keyword.keyword}' 分析失败: {analysis.get('error')}")
 
@@ -101,7 +119,8 @@ async def analyze_keywords_trending(
             "analyses": analyses,
             "summary": {
                 "message": f"成功分析 {len(analyses)} 个关键词的热点内容",
-                "keywords_analyzed": [a['keyword'] for a in analyses]
+                "keywords_analyzed": [a['keyword'] for a in analyses],
+                "total_video_content": sum(a['video_posts_count'] for a in analyses)
             }
         }
 
